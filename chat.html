@@ -1,0 +1,119 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Кошачий чат Twitch</title><style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}body{font:600 23px/1.35 'Segoe UI',sans-serif}#chat{height:100%;display:flex;flex-direction:column;justify-content:flex-end;gap:17px;padding:24px;overflow:hidden}.msg{position:relative;flex-shrink:0;padding:14px 19px;overflow-wrap:anywhere;animation:enter .45s ease both}.name{display:block;font-size:18px;font-weight:800;margin-bottom:5px}.role{font-size:12px;margin-left:8px;opacity:.85}.emote{height:1.4em;vertical-align:middle}.leave{animation:leave .5s ease forwards}@keyframes enter{from{opacity:0;transform:translateY(18px) scale(.96)}to{opacity:1;transform:none}}@keyframes leave{to{opacity:0;transform:translateX(25px)}}
+ .msg{background:linear-gradient(120deg,rgba(255,225,242,.96),rgba(222,240,255,.96));color:#513750;border:2px solid #20A875;border-radius:25px;box-shadow:0 4px 12px #a575b65c}.msg:before{content:'🐾';position:absolute;right:9px;top:-15px;font-size:25px}.name{color:#a04082}.owner{background:linear-gradient(120deg,#ffc8e3,#c5eaff);border-color:#E8B332;box-shadow:0 0 15px #ffc6e8}.mod{border-color:#169FE5}.vip{border-color:#E83E87}.sub{border-color:#884BE8}
+
+.fx{position:absolute;inset:0;pointer-events:none;overflow:visible}.particle{position:absolute;left:var(--x);top:var(--y);font-size:var(--size);animation:scatter .95s ease-out both;animation-delay:var(--delay);opacity:0;filter:drop-shadow(0 1px 2px #fff8)}@keyframes scatter{0%{opacity:0;transform:translate(0,0) scale(.45)}20%{opacity:1}75%{opacity:.85}100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--rot)) scale(.8)}}.vip:not(.leave){animation:enter .45s ease both,vipGlow 2.8s ease-in-out infinite .45s}@keyframes vipGlow{0%,100%{border-color:#E83E87;box-shadow:0 4px 12px #a575b65c}50%{border-color:#ff70bd;box-shadow:0 0 13px #e83e8799}}@media(prefers-reduced-motion:reduce){.particle{display:none}.vip:not(.leave){animation:enter .45s ease both}}
+
+/* Responsive stack: newest five messages at most, limited by available height. */
+#chat{padding:24px;gap:17px}.msg{padding:14px 19px;max-height:calc(100vh - 48px);display:flex;flex-direction:column}.name{margin-bottom:5px;line-height:1.35;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:26px}.message-text{display:block;min-height:0;overflow:hidden;overflow-wrap:anywhere;line-height:1.35}.emote{height:1.4em;width:auto}.msg.compact-text .message-text{font-size:var(--fit-size,23px)}
+/* Scale typography with source width, while preserving each bubble's initial height. */
+#chat{--message-size:23px;--name-size:18px;--role-size:12px}
+.message-text{font-size:var(--message-size)}
+.name{font-size:var(--name-size)}
+.role{font-size:var(--role-size)}
+.msg{width:100%;min-width:0}
+</style><div id="chat"></div><script>
+const q=new URLSearchParams(location.search),channel=(q.get('channel')||'honeybunnypsd').toLowerCase().replace(/^#/,''),duration=Math.max(0,Number(q.get('seconds')??60)||0),chat=document.querySelector('#chat');
+
+const num=(k,d,min,max)=>{const v=q.get(k);return v===null||!Number.isFinite(Number(v))?d:Math.max(min,Math.min(max,Number(v)))};
+const maxMessages=Math.round(num('max',5,1,5)), baseMessage=num('font',23,12,60),baseName=num('name',18,10,48),baseRole=num('role',12,8,32);
+const customStyle=document.createElement('style');
+customStyle.textContent=`#chat{gap:${num('gap',17,0,60)}px}.msg{border-radius:${num('radius',25,0,60)}px;background:linear-gradient(120deg,rgba(255,225,242,${num('opacity',96,0,100)/100}),rgba(222,240,255,${num('opacity',96,0,100)/100}))}.owner{background:linear-gradient(120deg,rgba(255,200,227,${num('opacity',96,0,100)/100}),rgba(197,234,255,${num('opacity',96,0,100)/100}))}`+(q.get('roles')==='0'?'.role{display:none}':'')+(q.get('vip')==='0'?'.vip:not(.leave){animation:enter .45s ease both}':'')+(q.get('animation')==='0'?'.msg,.vip:not(.leave),.leave{animation:none!important}':'');document.head.append(customStyle);
+
+// Coalesce layout changes into one measurement pass per animation frame.
+let fitPending=false;
+function scheduleFit(){if(fitPending)return;fitPending=true;requestAnimationFrame(()=>{fitPending=false;fit()});}
+const resizeObserver=typeof ResizeObserver!=='undefined'?new ResizeObserver(scheduleFit):null;
+if(resizeObserver)resizeObserver.observe(chat);
+else window.addEventListener('resize',scheduleFit,{passive:true});
+function burst(el,symbols,count=8){
+ if(q.get("particles")==="0"||q.get("animation")==="0"||document.hidden||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+ const layer=document.createElement('span');layer.className='fx';layer.setAttribute('aria-hidden','true');
+ const fragment=document.createDocumentFragment();
+ for(let i=0;i<count;i++){
+  const p=document.createElement('span');p.className='particle';p.textContent=symbols[i%symbols.length];
+  const angle=(i/count)*Math.PI*2;
+  for(const [k,v] of Object.entries({x:(15+Math.random()*70)+'%',y:(20+Math.random()*60)+'%',dx:Math.cos(angle)*45+'px',dy:(Math.sin(angle)*28-23)+'px',size:(14+Math.random()*9)+'px',delay:(Math.random()*.14)+'s',rot:(Math.random()*70-35)+'deg'}))p.style.setProperty('--'+k,v);
+  fragment.append(p);
+ }
+ layer.append(fragment);el.append(layer);
+ layer.addEventListener('animationend',()=>layer.remove(),{once:true});
+}
+const messageTimers=new WeakMap();
+function clearMessageTimers(el){const timers=messageTimers.get(el);if(timers){for(const id of timers)clearTimeout(id);messageTimers.delete(el)}}
+function removeMessage(el){clearMessageTimers(el);el.remove()}
+function dismiss(el){
+ if(!el.isConnected||el.classList.contains('leave'))return;
+ burst(el,['🐾'],9);el.classList.add('leave');
+ const timer=setTimeout(()=>{removeMessage(el);scheduleFit()},550);
+ const timers=messageTimers.get(el)||[];timers.push(timer);messageTimers.set(el,timers);
+}
+function fit(){
+ // Width is the only input to typography scaling; source height only controls
+ // how many bubbles fit, not their individual dimensions.
+ const width=chat.clientWidth;
+ const usable=Math.max(120,width-48);
+ const scale=q.get("adaptive")==="0"?1:Math.max(.72,Math.min(1.85,usable/752));
+ const targetSize=Math.round(baseMessage*scale*10)/10;
+ const nameSize=Math.round(baseName*scale*10)/10;
+ const roleSize=Math.round(baseRole*scale*10)/10;
+ chat.style.setProperty('--message-size',targetSize+'px');
+ chat.style.setProperty('--name-size',nameSize+'px');
+ chat.style.setProperty('--role-size',roleSize+'px');
+ while(chat.children.length>maxMessages)removeMessage(chat.firstElementChild);
+ // Establish the original natural bubble height once, before resizing its text.
+ // Bubble width remains fluid; subsequent source resizes do not stretch height.
+ for(const el of chat.children){
+  if(!el.dataset.lockedHeight){
+   const body=el.querySelector('.message-text');
+   const name=el.querySelector('.name');
+   const role=el.querySelector('.role');
+   const oldFont=body.style.fontSize;
+   const oldName=name.style.fontSize;
+   const oldRole=role?.style.fontSize;
+   body.style.fontSize='23px';name.style.fontSize='18px';
+   if(role)role.style.fontSize='12px';
+   const natural=Math.min(el.getBoundingClientRect().height,140);
+   el.style.height=Math.max(66,Math.ceil(natural))+'px';
+   el.dataset.lockedHeight='1';
+   body.style.fontSize=oldFont;name.style.fontSize=oldName;
+   if(role)role.style.fontSize=oldRole;
+  }
+ }
+ // Fit long messages within their original heights without growing bubbles.
+ for(const el of chat.children){
+  if(!el.dataset.fitDirty)continue;
+  const body=el.querySelector('.message-text');if(!body)continue;
+  body.style.display='block';body.style.webkitLineClamp='';
+  let size=targetSize;
+  body.style.fontSize=size+'px';
+  while(size>12&&body.scrollHeight>body.clientHeight+1){
+   size=Math.max(12,size-1);body.style.fontSize=size+'px';
+  }
+  if(body.scrollHeight>body.clientHeight+1){
+   const lines=Math.max(1,Math.floor(body.clientHeight/(parseFloat(getComputedStyle(body).lineHeight)||16)));
+   body.style.display='-webkit-box';body.style.webkitBoxOrient='vertical';body.style.webkitLineClamp=String(lines);
+  }
+  delete el.dataset.fitDirty;
+ }
+ const css=getComputedStyle(chat),available=chat.clientHeight-parseFloat(css.paddingTop)-parseFloat(css.paddingBottom),gap=parseFloat(css.rowGap)||0;
+ let entries=Array.from(chat.children);
+ let heights=entries.map(el=>el.offsetHeight);
+ let total=heights.reduce((a,b)=>a+b,0)+Math.max(0,entries.length-1)*gap;
+ while(entries.length>1&&total>available+.5){total-=heights.shift()+gap;removeMessage(entries.shift())}
+}
+let lastWidth=chat.clientWidth,lastHeight=chat.clientHeight;
+const dimensionObserver=typeof ResizeObserver!=='undefined'?new ResizeObserver(()=>{
+ const w=chat.clientWidth,h=chat.clientHeight;
+ if(w!==lastWidth||h!==lastHeight){lastWidth=w;lastHeight=h;for(const el of chat.children)el.dataset.fitDirty='1';scheduleFit();}
+}):null;
+if(dimensionObserver)dimensionObserver.observe(chat);
+function add(name,message,tags={}){const el=document.createElement('div');el.className='msg';const badges=tags.badges||'';let role=badges.includes('broadcaster/')?'Стример':badges.includes('moderator/')?'Модератор':badges.includes('vip/')?'VIP':badges.includes('subscriber/')?'Подписчик':'';if(role)el.classList.add(badges.includes('broadcaster/')?'owner':badges.includes('moderator/')?'mod':badges.includes('vip/')?'vip':'sub');el.dataset.id=tags.id||'';el.dataset.user=tags['user-id']||'';const n=document.createElement('span');n.className='name';n.textContent=name;if(tags.color&&/^#[0-9a-f]{6}$/i.test(tags.color))n.style.color=tags.color;if(role){const r=document.createElement('span');r.className='role';r.textContent=' ✦ '+role;n.append(r)}el.append(n);const body=document.createElement('span');body.className='message-text';const chars=Array.from(message),ranges=[];for(const e of (tags.emotes||'').split('/')){const [id,positions]=e.split(':');if(!positions||!/^[-\w]+$/.test(id))continue;for(const pos of positions.split(',')){const [a,b]=pos.split('-').map(Number);ranges.push({a,b,id})}}ranges.sort((a,b)=>a.a-b.a);let cursor=0;for(const {a,b,id} of ranges){if(a<cursor||b>=chars.length)continue;body.append(document.createTextNode(chars.slice(cursor,a).join('')));const img=document.createElement('img');img.className='emote';img.alt=chars.slice(a,b+1).join('');img.addEventListener("load",()=>{el.dataset.fitDirty="1";scheduleFit()},{once:true});img.src='https://static-cdn.jtvnw.net/emoticons/v2/'+id+'/default/dark/2.0';body.append(img);cursor=b+1}body.append(document.createTextNode(chars.slice(cursor).join('')));el.append(body);el.dataset.fitDirty="1";chat.append(el);burst(el,el.classList.contains("owner")?["🐾","✨","✦"]:el.classList.contains("sub")?["🐾","💕","💗"]:["🐾"],8);scheduleFit();if(duration){const timer=setTimeout(()=>dismiss(el),duration*1000);messageTimers.set(el,[timer])}}
+function tagsOf(raw){return Object.fromEntries(raw.split(';').map(x=>{const i=x.indexOf('=');return [x.slice(0,i),x.slice(i+1).replace(/\\([snr: ma])/g,(_,c)=>({s:' ',n:'\n',r:'\r',':':';'}[c]||c))]}))}
+// Known Twitch bots: compare exact account logins, not display names.
+const IGNORED_TWITCH_BOTS=new Set(["nightbot", "streamelements", "streamlabs", "moobot", "fossabot", "wizebot", "sery_bot", "soundalerts", "commanderroot", "anotherttvviewer", "botrixoficial", "creatisbot", "pokemoncommunitygame", "clueland_bot", "vsestream"]);
+if(q.has("bots")){IGNORED_TWITCH_BOTS.clear();for(const bot of q.get("bots").split(/[\s,;]+/))if(bot)IGNORED_TWITCH_BOTS.add(bot.toLowerCase());}
+function isIgnoredTwitchBot(login){return q.get("filter")!=="0"&&IGNORED_TWITCH_BOTS.has(String(login||" ").trim().toLowerCase());}
+function connect(){const ws=new WebSocket('wss://irc-ws.chat.twitch.tv:443');ws.onopen=()=>{ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');ws.send('PASS SCHMOOPIIE');ws.send('NICK justinfan'+Math.floor(Math.random()*900000+100000));ws.send('JOIN #'+channel)};ws.onmessage=event=>{for(let line of event.data.split('\r\n')){if(line.startsWith('PING')){ws.send(line.replace('PING','PONG'));continue}let tags={};if(line.startsWith('@')){const i=line.indexOf(' ');tags=tagsOf(line.slice(1,i));line=line.slice(i+1)}const m=line.match(/^:([^! ]+)!\S+ PRIVMSG #([a-z0-9_]+) :(.*)$/i);if(m&&m[2].toLowerCase()===channel&&!isIgnoredTwitchBot(m[1]))add(tags['display-name']||m[1],m[3],tags);if(line.includes(' CLEARMSG '))for(const el of chat.children)if(el.dataset.id===tags['target-msg-id'])removeMessage(el);if(line.includes(' CLEARCHAT ')){if(tags['target-user-id']){for(const el of [...chat.children])if(el.dataset.user===tags['target-user-id'])removeMessage(el)}else {for(const el of [...chat.children])removeMessage(el)}}if(line.includes(' RECONNECT'))ws.close()}};ws.onerror=()=>ws.close();ws.onclose=()=>setTimeout(connect,5000)}
+if(q.get('demo')==='1'){const demo=[['Стример','Добро пожаловать, мои котята! 💙',{badges:'broadcaster/1'}],['Модератор','Очень длинное сообщение для проверки адаптивного размера плашки. Теперь оно занимает столько места, сколько нужно для нескольких строк текста, а предыдущие сообщения освобождают место. ✨',{badges:'moderator/1'}],['Котёнок','Всем уютного стрима! 🐾',{}],['VIP-котик','Мяу! ❤️',{badges:'vip/1'}],['Пушистик','Мур-мур! 💜',{badges:'subscriber/1'}]];demo.forEach((a,i)=>setTimeout(()=>add(...a),i*650));if(q.get("loop")==="1"){let i=0;setInterval(()=>add(...demo[i++%demo.length]),2500)}}else if(/^[a-z0-9_]{1,25}$/.test(channel))connect();
+</script></html>
